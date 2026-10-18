@@ -373,6 +373,21 @@ export function installDecor(R) {
     D.wallTorches.push(glowSprite(0xff8a30, x, 96, y, 34));
   }
 
+  // ---- rollover wire switches in every lane ----
+  const wireG = new THREE.TorusGeometry(8, 0.9, 6, 16, Math.PI);
+  const slotM = new THREE.MeshBasicMaterial({ color: 0x050302 });
+  const lanes = [...parts.topLanes.map((s) => [s.x, s.y]), ...parts.heroLanes.map((s) => [s.x, s.y])];
+  for (const [x, y] of lanes) {
+    const slot = new THREE.Mesh(new THREE.PlaneGeometry(4, 22), slotM);
+    slot.rotation.x = -Math.PI / 2; slot.position.set(x, 0.5, y); root.add(slot);
+    const wire = new THREE.Mesh(wireG, mat.chrome);
+    wire.rotation.y = Math.PI / 2; wire.position.set(x, 0, y); root.add(wire);
+  }
+  // star rollovers studded along the orbit lanes
+  const starG = new THREE.CylinderGeometry(5, 5, 1.5, 5);
+  const starM = new THREE.MeshStandardMaterial({ color: 0xffe080, emissive: 0xffb020, emissiveIntensity: 0.4, metalness: 0.6, roughness: 0.3 });
+  for (const [x, y] of [[48, 560], [48, 360], [522, 540], [522, 360]]) add(starG, starM, x, 0.8, y, false);
+
   // ---- printed sideboards ----
   const side = cv(2048, 160), sx = side.getContext('2d');
   const sg = sx.createLinearGradient(0, 0, 0, 160); sg.addColorStop(0, '#1a0a20'); sg.addColorStop(0.7, '#3a0a10'); sg.addColorStop(1, '#ff5a10');
@@ -453,6 +468,15 @@ export function installDecor(R) {
     boxM.position.set(0, 860, -30); boxM.castShadow = true; back.add(boxM);
     glass.position.set(0, 860, 6);
     back.add(glass);
+    // speaker grilles either side of the dot-matrix display
+    const grill = cv(128, 128), gx = grill.getContext('2d');
+    gx.fillStyle = '#0a0806'; gx.fillRect(0, 0, 128, 128);
+    gx.fillStyle = '#2a2420';
+    for (let yy = 6; yy < 128; yy += 10) for (let xx = 6; xx < 128; xx += 10) { gx.beginPath(); gx.arc(xx, yy, 3.2, 0, TAU); gx.fill(); }
+    gx.strokeStyle = '#e8b44a'; gx.lineWidth = 6; gx.strokeRect(3, 3, 122, 122);
+    for (const sx2 of [-262, 262]) { const sp = new THREE.Mesh(new THREE.PlaneGeometry(90, 140), new THREE.MeshStandardMaterial({ map: tex(grill), metalness: 0.4, roughness: 0.6 })); sp.position.set(sx2, 470, 7); back.add(sp); }
+    // chrome trim around the backbox
+    for (const yy of [318, 622, 662, 1058]) { const tr = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 650, 10), mat.chrome); tr.rotation.z = Math.PI / 2; tr.position.set(0, yy, 8); back.add(tr); }
     if (R.marquee) R.marquee.position.y = 1108;
     if (R.marqueeBox) R.marqueeBox.position.y = 1108;
   }

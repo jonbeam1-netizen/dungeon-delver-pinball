@@ -104,6 +104,24 @@ function woodCanvas(w, h, base = '#3a2414') {
   }
   return c;
 }
+function faceTex(w, h, draw) {
+  const c = cv(w, h);
+  draw(c.getContext('2d'), w, h);
+  return tex(c);
+}
+const runeFace = (glyph, col) => faceTex(64, 128, (x, w, h) => {
+  const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#2a1640'); g.addColorStop(1, '#0e0618');
+  x.fillStyle = g; x.fillRect(0, 0, w, h);
+  x.strokeStyle = '#e8b44a'; x.lineWidth = 4; x.strokeRect(3, 3, w - 6, h - 6);
+  x.fillStyle = col; x.shadowColor = col; x.shadowBlur = 10;
+  x.font = 'bold 54px serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(glyph, w / 2, h / 2);
+});
+const bullseye = (col) => faceTex(64, 64, (x, w) => {
+  x.fillStyle = '#f2ead6'; x.fillRect(0, 0, w, w);
+  for (let i = 4; i > 0; i--) { x.beginPath(); x.arc(w / 2, w / 2, i * 7.5, 0, Math.PI * 2); x.fillStyle = i % 2 ? col : '#f2ead6'; x.fill(); }
+  x.strokeStyle = '#1a0a04'; x.lineWidth = 3; x.strokeRect(1, 1, w - 2, w - 2);
+});
+
 function glowCanvas() {
   const c = cv(128, 128), x = c.getContext('2d');
   const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
@@ -394,6 +412,7 @@ export class Renderer3D {
       });
       im.castShadow = im.receiveShadow = true;
       this.root.add(im);
+      if (kind === 'rail') this.railCaps(segs[kind], 0);
       const jm = new THREE.InstancedMesh(cyl, mat, joints[kind].length);
       joints[kind].forEach(([x, y, r, h], i) => {
         m4.compose(new THREE.Vector3(x, h / 2, y), new THREE.Quaternion(), new THREE.Vector3(r * 2, h, r * 2));
@@ -437,7 +456,23 @@ export class Renderer3D {
     add(36, 360, 460, -18, 0, -200);
     add(36, 360, 460, 618, 0, -200);
     add(672, 150, 1600, 300, -86, 360, new THREE.MeshStandardMaterial({ color: 0x1a120c, roughness: 0.8 }));
-    add(672, 60, 50, 300, 30, 1125, this.mat.iron); // lockdown bar
+    add(672, 52, 50, 300, 26, 1125, this.mat.iron);
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(14, 14, 676, 24), this.mat.chrome);
+    bar.rotation.z = Math.PI / 2; bar.position.set(300, 58, 1122); bar.castShadow = true; this.root.add(bar);
+    // flipper buttons on the cabinet sides + launch button + coin door
+    const btn = new THREE.MeshStandardMaterial({ color: 0xc01818, roughness: 0.3, emissive: 0x400000 });
+    for (const bx of [-38, 638]) { const b2 = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 10, 20), btn); b2.rotation.z = Math.PI / 2; b2.position.set(bx, -10, 1060); this.root.add(b2); }
+    const launch = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 10, 20), new THREE.MeshStandardMaterial({ color: 0xffc020, emissive: 0x806000, emissiveIntensity: 0.8 }));
+    launch.rotation.x = Math.PI / 2; launch.position.set(560, -10, 1152); this.root.add(launch);
+    const doorTex = faceTex(256, 256, (x, w, h) => {
+      x.fillStyle = '#1a1614'; x.fillRect(0, 0, w, h);
+      x.strokeStyle = '#8a8070'; x.lineWidth = 8; x.strokeRect(8, 8, w - 16, h - 16);
+      for (const cx of [80, 176]) { x.fillStyle = '#300606'; x.fillRect(cx - 22, 50, 44, 70); x.fillStyle = '#ff3020'; x.fillRect(cx - 4, 60, 8, 40); x.fillStyle = '#d8d0c0'; x.font = '700 16px Georgia'; x.textAlign = 'center'; x.fillText('25¢', cx, 140); }
+      x.fillStyle = '#5a5248'; x.fillRect(40, 170, w - 80, 50);
+      x.fillStyle = '#d8c8a0'; x.font = '900 18px Cinzel, Georgia, serif'; x.fillText('INSERT GOLD', w / 2, 202);
+    });
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), new THREE.MeshStandardMaterial({ map: doorTex, emissive: 0xffffff, emissiveMap: doorTex, emissiveIntensity: 0.25, metalness: 0.5, roughness: 0.4 }));
+    door.position.set(300, -70, 1151); this.root.add(door);
     // metal side trims
     add(8, 8, 1180, -2, 72, 560, this.mat.chrome);
     add(8, 8, 1180, 602, 72, 560, this.mat.chrome);
@@ -561,8 +596,12 @@ export class Renderer3D {
     }
     // machine legs
     for (const [x, z] of [[-3.1, -5.6], [3.1, -5.6], [-3.1, 5.6], [3.1, 5.6]]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.4, 0.2), this.mat.iron);
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.4, 0.22), this.mat.chrome);
       leg.position.set(x, -1.5, z); room.add(leg);
+      const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.12, 12), this.mat.iron);
+      foot.position.set(x, -2.62, z); room.add(foot);
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.2, 0.26), this.mat.chrome);
+      brace.position.set(x, -0.35, z); room.add(brace);
     }
   }
 
@@ -598,15 +637,29 @@ export class Renderer3D {
       rub.rotation.y = -Math.atan2(f.by - f.ay, f.bx - f.ax);
       rub.position.set((f.ax + f.bx) / 2, 12, (f.ay + f.by) / 2);
       rub.castShadow = true;
+      rub.visible = false;
       this.root.add(rub);
       for (const p of sl.pts) this.post(p[0], p[1], 6);
+      const cx = (sl.pts[0][0] + sl.pts[1][0] + sl.pts[2][0]) / 3, cz = (sl.pts[0][1] + sl.pts[1][1] + sl.pts[2][1]) / 3;
+      const ring = [];
+      for (let i = 0; i < 3; i++) {
+        const p = sl.pts[i], dx = p[0] - cx, dz = p[1] - cz, l = Math.hypot(dx, dz);
+        const ang = Math.atan2(dz, dx);
+        for (let k = -2; k <= 2; k++) { const a = ang + k * 0.45; ring.push(new THREE.Vector3(p[0] + Math.cos(a) * 8.5, 12, p[1] + Math.sin(a) * 8.5)); }
+      }
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ring, true, 'centripetal'), 90, 3.6, 8, true), new THREE.MeshStandardMaterial({ color: 0x141010, roughness: 0.7 }));
+      tube.castShadow = true;
+      this.root.add(tube);
       return { sl, plastic, rub, base: rub.position.clone(), n: new THREE.Vector3(sl.side === 0 ? 0.92 : -0.92, 0, -0.39) };
     });
     for (const p of g.table.draw.posts) this.post(p.x, p.y, p.r);
     // drop targets & standups
     const runeMat = new THREE.MeshStandardMaterial({ color: 0x5a3a7a, emissive: 0x6a2ab0, emissiveIntensity: 0.5, roughness: 0.4 });
-    this.drops = parts.drops.map((d) => {
-      const m = this.add(new THREE.BoxGeometry(12, 34, 30), runeMat.clone(), d.ax, 17, (d.ay + d.by) / 2);
+    this.drops = parts.drops.map((d, i) => {
+      const side = runeMat.clone();
+      const face = new THREE.MeshStandardMaterial({ map: runeFace('ᚱᚢᚾᛖ'[i], '#d89aff'), emissive: 0xffffff, emissiveMap: runeFace('ᚱᚢᚾᛖ'[i], '#d89aff'), emissiveIntensity: 0.35, roughness: 0.35 });
+      const m = this.add(new THREE.BoxGeometry(12, 34, 30), [face, side, side, side, side, side], d.ax, 17, (d.ay + d.by) / 2);
+      m.material.forEach((mm) => (mm.userData.drop = true));
       return { d, m, y: 17 };
     });
     const standMat = new THREE.MeshStandardMaterial({ color: 0xc02a1a, emissive: 0x300000, roughness: 0.35 });
@@ -614,7 +667,10 @@ export class Renderer3D {
       const grp = new THREE.Group();
       grp.position.set(s.ax + 4, 0, (s.ay + s.by) / 2);
       this.root.add(grp);
-      const face = new THREE.Mesh(new THREE.BoxGeometry(6, 30, 28), standMat.clone()); face.position.set(-4, 18, 0); face.castShadow = true; grp.add(face);
+      const bm = new THREE.MeshStandardMaterial({ map: bullseye('#c02a1a'), roughness: 0.4, emissive: 0x000000 });
+      const sm = standMat.clone();
+      const face = new THREE.Mesh(new THREE.BoxGeometry(6, 30, 28), [sm, bm, sm, sm, sm, sm]); face.position.set(-4, 18, 0); face.castShadow = true; grp.add(face);
+      face.material = bm; face.material = [sm, bm, sm, sm, sm, sm];
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 18), this.mat.steel); pole.position.set(2, 9, 0); grp.add(pole);
       return { s, grp, face };
     });
@@ -623,7 +679,13 @@ export class Renderer3D {
     this.spinnerGrp = new THREE.Group();
     this.spinnerGrp.position.set((sp.x0 + sp.x1) / 2, 30, sp.y);
     this.root.add(this.spinnerGrp);
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(44, 20, 2), this.mat.chrome);
+    const spinTex = faceTex(176, 80, (x, w, h) => {
+      const gr = x.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#f4f4f8'); gr.addColorStop(0.5, '#9aa0aa'); gr.addColorStop(1, '#e8e8ee');
+      x.fillStyle = gr; x.fillRect(0, 0, w, h);
+      x.fillStyle = '#1a3a8a'; x.font = '900 34px Cinzel, Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('SOULS', w / 2, h / 2 + 2);
+      x.strokeStyle = '#1a3a8a'; x.lineWidth = 4; x.strokeRect(4, 4, w - 8, h - 8);
+    });
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(44, 20, 2), [this.mat.chrome, this.mat.chrome, this.mat.chrome, this.mat.chrome, new THREE.MeshStandardMaterial({ map: spinTex, metalness: 0.7, roughness: 0.25 }), new THREE.MeshStandardMaterial({ map: spinTex, metalness: 0.7, roughness: 0.25 })]);
     plate.position.y = -11; plate.castShadow = true;
     this.spinnerGrp.add(plate);
     const axle = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 52, 8), this.mat.iron); axle.rotation.z = Math.PI / 2; this.spinnerGrp.add(axle);
@@ -636,6 +698,21 @@ export class Renderer3D {
     // lair pedestal + HP ring
     const lair = parts.monster;
     const ped = this.add(new THREE.CylinderGeometry(lair.r + 2, lair.r + 8, 22, 12), this.mat.stoneDark, lair.x, 11, lair.y);
+    const boneMat = new THREE.MeshStandardMaterial({ color: 0xe0d6bc, roughness: 0.5 });
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * TAU;
+      const sx = lair.x + Math.cos(a) * (lair.r + 6), sz = lair.y + Math.sin(a) * (lair.r + 6);
+      const sk = this.add(new THREE.SphereGeometry(5, 10, 8), boneMat, sx, 20, sz);
+      sk.scale.set(1, 0.95, 1.1);
+      const eyeM = new THREE.MeshBasicMaterial({ color: 0xff4a10 });
+      for (const off of [-1.8, 1.8]) {
+        const e = new THREE.Mesh(new THREE.SphereGeometry(1.2, 6, 4), eyeM);
+        e.position.set(sx + Math.cos(a) * 4.4 - Math.sin(a) * off, 20.5, sz + Math.sin(a) * 4.4 + Math.cos(a) * off);
+        this.root.add(e);
+      }
+    }
+    const rim = this.add(new THREE.TorusGeometry(lair.r + 3, 2.2, 8, 40), this.mat.gold, lair.x, 22, lair.y);
+    rim.rotation.x = Math.PI / 2;
     const band = new THREE.Mesh(new THREE.CylinderGeometry(lair.r + 3.2, lair.r + 3.2, 5, 24, 1, true), new THREE.MeshStandardMaterial({ color: 0x401808, emissive: 0xff7a20, emissiveIntensity: 1.2 }));
     band.position.set(lair.x, 16, lair.y);
     this.root.add(band);
@@ -669,7 +746,17 @@ export class Renderer3D {
         const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; grp.add(m); return m;
       };
       const rubber = ex(shape(f.rb, f.rt), 16, this.mat.rubber.clone(), 3);
-      const top = ex(shape(f.rb - 3.5, f.rt - 3), 22, new THREE.MeshStandardMaterial({ color: 0xe8e4dc, metalness: 0.9, roughness: 0.18, emissive: 0x000000 }), 2);
+      const decal = faceTex(256, 64, (x, w, h) => {
+        const gr = x.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.5, '#c8ccd4'); gr.addColorStop(1, '#8a8e98');
+        x.fillStyle = gr; x.fillRect(0, 0, w, h);
+        x.strokeStyle = 'rgba(60,40,20,0.6)'; x.lineWidth = 3; x.beginPath(); x.moveTo(40, h / 2); x.lineTo(w - 20, h / 2); x.stroke();
+        x.fillStyle = '#a01810'; x.font = '900 30px Cinzel, Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+        x.fillText('DELVER', w * 0.58, h / 2 + 1);
+      });
+      decal.wrapS = decal.wrapT = THREE.RepeatWrapping;
+      if (f.side === 1) { decal.repeat.set(-1 / f.len, -1 / (f.rb * 2)); decal.offset.set(1, 0.5); }
+      else { decal.repeat.set(1 / f.len, 1 / (f.rb * 2)); decal.offset.set(0, 0.5); }
+      const top = ex(shape(f.rb - 3.5, f.rt - 3), 22, [new THREE.MeshStandardMaterial({ map: decal, metalness: 0.85, roughness: 0.2, emissive: 0x000000 }), new THREE.MeshStandardMaterial({ color: 0xe8e4dc, metalness: 0.9, roughness: 0.18, emissive: 0x000000 })], 2);
       const guard = new THREE.Mesh(new THREE.BoxGeometry(5, 8, f.rb * 2 + 6), this.mat.gold); guard.position.set(13, 22, 0); guard.castShadow = true; grp.add(guard);
       const pom = new THREE.Mesh(new THREE.CylinderGeometry(7, 8, 30, 16), this.mat.gold); pom.position.y = 15; grp.add(pom);
       const gem = new THREE.Mesh(new THREE.SphereGeometry(4, 12, 8), new THREE.MeshStandardMaterial({ color: 0xc01818, emissive: 0x800000, emissiveIntensity: 1, roughness: 0.2 })); gem.position.y = 31; grp.add(gem);
@@ -705,6 +792,7 @@ export class Renderer3D {
   }
   post(x, y, r) {
     this.add(new THREE.CylinderGeometry(r * 0.6, r * 0.6, 32, 10), this.mat.steel, x, 16, y);
+    this.add(new THREE.SphereGeometry(r * 0.75, 12, 8, 0, TAU, 0, Math.PI / 2), this.mat.gold, x, 32, y);
     const t = this.add(new THREE.TorusGeometry(r, 2.6, 8, 16), this.mat.rubber, x, 12, y);
     t.rotation.x = Math.PI / 2;
   }
@@ -937,11 +1025,24 @@ export class Renderer3D {
       });
       im.castShadow = im.receiveShadow = true;
       this.root.add(im);
+      if (mat === this.mat.steel) this.railCaps(e.segs, baseH);
       const jm = new THREE.InstancedMesh(cyl, mat, e.joints.length);
       e.joints.forEach(([x, y, r, h], i) => { m4.compose(new THREE.Vector3(x, baseH + h / 2, y), new THREE.Quaternion(), new THREE.Vector3(r * 2, h, r * 2)); jm.setMatrixAt(i, m4); });
       jm.castShadow = jm.receiveShadow = true;
       this.root.add(jm);
     }
+  }
+  railCaps(segs, baseH) {
+    const geo = new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1, true).rotateZ(Math.PI / 2);
+    const im = new THREE.InstancedMesh(geo, this.mat.chrome, segs.length);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    segs.forEach(([ax, ay, bx, by, r, h], i) => {
+      q.setFromAxisAngle(up, -Math.atan2(by - ay, bx - ax));
+      m4.compose(new THREE.Vector3((ax + bx) / 2, baseH + h, (ay + by) / 2), q, new THREE.Vector3(Math.hypot(bx - ax, by - ay), r * 2 + 1.5, r * 2 + 1.5));
+      im.setMatrixAt(i, m4);
+    });
+    im.castShadow = true;
+    this.root.add(im);
   }
   buildDeck() {
     const parts = this.g.parts, D = T.DECK_H, deck = parts.deck;
@@ -1135,8 +1236,21 @@ export class Renderer3D {
       const ped = this.add(new THREE.CylinderGeometry(W.boss.r + 2, W.boss.r + 6, 8, 16), this.mat.stoneDark, W.boss.x, H + 4, W.boss.y);
       // drop targets (coffins / ingots)
       const dropMat = crypt ? new THREE.MeshStandardMaterial({ color: 0x3a2414, roughness: 0.7, emissive: 0x20ff60, emissiveIntensity: 0.15, map: this.mat.wood.map }) : new THREE.MeshStandardMaterial({ color: 0xffc040, metalness: 1, roughness: 0.25, emissive: 0xff8000, emissiveIntensity: 0.2 });
+      const lid = faceTex(128, 96, (x2, w2, h2) => {
+        if (crypt) {
+          x2.fillStyle = '#3a2414'; x2.fillRect(0, 0, w2, h2);
+          x2.strokeStyle = '#8a6a3a'; x2.lineWidth = 5; x2.strokeRect(4, 4, w2 - 8, h2 - 8);
+          x2.fillStyle = '#7dff9a'; x2.shadowColor = '#40ff80'; x2.shadowBlur = 12;
+          x2.fillRect(w2 / 2 - 5, 16, 10, 64); x2.fillRect(w2 / 2 - 22, 32, 44, 10);
+        } else {
+          const gg = x2.createLinearGradient(0, 0, 0, h2); gg.addColorStop(0, '#fff2a0'); gg.addColorStop(0.5, '#e8a830'); gg.addColorStop(1, '#8a5a10');
+          x2.fillStyle = gg; x2.fillRect(0, 0, w2, h2);
+          x2.fillStyle = '#5a3a08'; x2.font = '900 30px Cinzel, Georgia, serif'; x2.textAlign = 'center'; x2.textBaseline = 'middle'; x2.fillText('⚒', w2 / 2, h2 / 2);
+        }
+      });
+      const faceM = new THREE.MeshStandardMaterial({ map: lid, roughness: crypt ? 0.6 : 0.25, metalness: crypt ? 0 : 0.8, emissive: 0xffffff, emissiveMap: lid, emissiveIntensity: crypt ? 0.3 : 0.15 });
       const drops = W.drops.map((d) => {
-        const mm = this.add(new THREE.BoxGeometry(Math.hypot(d.bx - d.ax, d.by - d.ay) + 6, 30, 12), dropMat, (d.ax + d.bx) / 2, H + 15, (d.ay + d.by) / 2);
+        const mm = this.add(new THREE.BoxGeometry(Math.hypot(d.bx - d.ax, d.by - d.ay) + 6, 30, 12), [dropMat, dropMat, dropMat, dropMat, faceM, dropMat], (d.ax + d.bx) / 2, H + 15, (d.ay + d.by) / 2);
         mm.rotation.y = -Math.atan2(d.by - d.ay, d.bx - d.ax);
         return { d, m: mm, y: H + 15 };
       });
@@ -1375,6 +1489,7 @@ export class Renderer3D {
       const f = s.sl.face;
       f.flash = Math.max(0, f.flash - dt * 6);
       s.rub.position.copy(s.base).addScaledVector(s.n, f.flash * 6);
+      s.rub.visible = f.flash > 0.05;
       s.plastic.emissiveIntensity = 1 + f.flash * 4;
       s.rub.material.emissive.setRGB(f.flash * 0.8, f.flash * 0.25, 0);
     }
@@ -1383,13 +1498,12 @@ export class Renderer3D {
       const target = d.d.down ? -20 : 17;
       d.y += (target - d.y) * Math.min(1, dt * (d.d.down ? 25 : 10));
       d.m.position.y = d.y;
-      d.m.material.emissiveIntensity = 0.4 + 0.3 * Math.sin(t * 4 + d.d.ay);
+      d.m.material[0].emissiveIntensity = 0.25 + 0.25 * Math.sin(t * 4 + d.d.ay);
     }
     for (const s of this.standups) {
       s.s.wobble = Math.max(0, s.s.wobble - dt * 3);
       s.grp.rotation.z = Math.sin(s.s.wobble * 30) * s.s.wobble * 0.25;
-      s.face.material.emissiveIntensity = s.s.wobble * 3;
-      s.face.material.emissive.setRGB(1, 0.3, 0.2);
+      s.face.material[1].emissive.setRGB(s.s.wobble * 0.8, s.s.wobble * 0.2, 0);
     }
     this.spinnerGrp.rotation.x = parts.spinner.angle;
     // vault rim + crystal
@@ -1415,7 +1529,7 @@ export class Renderer3D {
     for (const fm of this.flippers) {
       fm.grp.rotation.y = -fm.f.angle;
       const e = rage ? 0.6 + 0.4 * Math.sin(t * 10) : aegis ? 0.4 + 0.3 * Math.sin(t * 8) : 0;
-      fm.top.material.emissive.setRGB(rage ? e : aegis ? e * 0.3 : 0, aegis ? e : 0, aegis ? e * 0.5 : 0);
+      for (const mm of fm.top.material) mm.emissive.setRGB(rage ? e : aegis ? e * 0.3 : 0, aegis ? e : 0, aegis ? e * 0.5 : 0);
     }
     // plunger
     const pl = g.plunger;
