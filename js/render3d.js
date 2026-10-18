@@ -235,15 +235,22 @@ export class Renderer3D {
       rg.addColorStop(0, col); rg.addColorStop(1, 'rgba(0,0,0,0)');
       x.fillStyle = rg; x.fillRect(px - r, py - r, r * 2, r * 2);
     }
-    const t = tex(c);
-    t.mapping = THREE.EquirectangularReflectionMapping;
+    const envScene = new THREE.Scene();
+    envScene.add(new THREE.Mesh(new THREE.SphereGeometry(30, 16, 12), new THREE.MeshBasicMaterial({ color: 0x140c08, side: THREE.BackSide })));
+    const panel = (col, pos, w, h) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide })); m.position.set(...pos); m.lookAt(0, 0, 0); envScene.add(m); };
+    panel(0xffe0b0, [0, 14, 2], 14, 6);
+    panel(0xff8a30, [-12, 4, -6], 4, 6);
+    panel(0xff8a30, [12, 4, -6], 4, 6);
+    panel(0x8a5aff, [-10, 6, 8], 6, 4);
+    panel(0x3a8aff, [10, 6, 8], 6, 4);
+    panel(0xfff4e0, [0, 6, 14], 10, 3);
     const pm = new THREE.PMREMGenerator(this.r);
-    this.envMap = pm.fromEquirectangular(t).texture;
+    this.envMap = pm.fromScene(envScene, 0.03).texture;
     this.scene.environment = this.envMap;
     pm.dispose();
     this.mat = {
-      steel: new THREE.MeshStandardMaterial({ color: 0xe8e2d8, metalness: 1, roughness: 0.2, envMapIntensity: 2.4 }),
-      chrome: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: 0.06, envMapIntensity: 2.8 }),
+      steel: new THREE.MeshStandardMaterial({ color: 0xd8d2c8, metalness: 1, roughness: 0.22, envMapIntensity: 1.6 }),
+      chrome: new THREE.MeshStandardMaterial({ color: 0xdedee4, metalness: 1, roughness: 0.1, envMapIntensity: 1.7 }),
       iron: new THREE.MeshStandardMaterial({ color: 0x3a3632, metalness: 0.8, roughness: 0.45 }),
       gold: new THREE.MeshStandardMaterial({ color: 0xe8b440, metalness: 1, roughness: 0.25 }),
       rubber: new THREE.MeshStandardMaterial({ color: 0x8a1410, roughness: 0.6 }),
@@ -1291,6 +1298,7 @@ export class Renderer3D {
         w.hold.rotation.y = Math.sin(t * 0.6) * 0.4;
         ud.staff.rotation.z = Math.sin(t * 2) * 0.15 - flash * 0.6;
         ud.orb.material.emissiveIntensity = 2.5 + Math.sin(t * 5) + flash * 4;
+        if (ud.runes) ud.runes.rotation.y += dt * 1.2;
         const dead = st && st.bossHP <= 0;
         w.hold.scale.setScalar(dead ? 40 : 80);
         if (Math.random() < 0.4) PB.FX.emit({ x: w.W.boss.x + U.rand(-50, 50), y: w.W.boss.y + U.rand(-40, 40), h: H + 10, vh: U.rand(20, 60), life: 1.2, color: '#40ff80', size: U.rand(14, 24), g: -10 });
@@ -1884,13 +1892,13 @@ export class Renderer3D {
 // Build portraits of every monster + hero once, for the UI and the dot-matrix display
 export function makePortraits() {
   return renderPortraits([
-    { id: 'goblin', focus: 0.62, dist: 0.85 },
-    { id: 'skeleton', focus: 0.7, dist: 0.85 },
-    { id: 'cyclops', focus: 0.7, dist: 0.95 },
-    { id: 'mimic', focus: 0.5, dist: 0.95 },
-    { id: 'demon', focus: 0.68, dist: 1.25 },
-    { id: 'paladin', focus: 0.68, dist: 0.85, bg: 0x101810 },
-    { id: 'crusader', focus: 0.68, dist: 0.85, bg: 0x181010 },
+    { id: 'goblin', focus: 0.58, dist: 1.0 },
+    { id: 'skeleton', focus: 0.6, dist: 1.1 },
+    { id: 'cyclops', focus: 0.6, dist: 1.15 },
+    { id: 'mimic', focus: 0.45, dist: 1.0 },
+    { id: 'demon', focus: 0.6, dist: 1.5 },
+    { id: 'paladin', focus: 0.62, dist: 1.0, bg: 0x101810 },
+    { id: 'crusader', focus: 0.62, dist: 1.0, bg: 0x181010 },
   ]);
 }
 

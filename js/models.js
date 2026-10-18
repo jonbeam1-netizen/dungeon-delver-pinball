@@ -3,13 +3,67 @@ import * as THREE from './vendor/three.module.min.js';
 
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
+// ---- procedural surface textures (generated once, shared) ----
+const TEXC = {};
+function genTex(kind) {
+  if (TEXC[kind]) return TEXC[kind];
+  const N = 256, c = document.createElement('canvas');
+  c.width = c.height = N;
+  const x = c.getContext('2d');
+  let seed = kind.length * 977 + 13;
+  const R = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  x.fillStyle = '#808080'; x.fillRect(0, 0, N, N);
+  if (kind === 'skin') {
+    for (let o = 0; o < 3; o++) for (let i = 0; i < 900 * (o + 1); i++) {
+      const v = R() > 0.5 ? 255 : 0, s = (3 - o) * 3 * R() + 1;
+      x.fillStyle = `rgba(${v},${v},${v},${0.06 + o * 0.03})`;
+      x.beginPath(); x.arc(R() * N, R() * N, s, 0, Math.PI * 2); x.fill();
+    }
+    x.strokeStyle = 'rgba(0,0,0,0.12)';
+    for (let i = 0; i < 40; i++) { x.beginPath(); let px = R() * N, py = R() * N; x.moveTo(px, py); for (let k = 0; k < 5; k++) { px += (R() - 0.5) * 30; py += (R() - 0.5) * 30; x.lineTo(px, py); } x.stroke(); }
+  } else if (kind === 'scales') {
+    const s = 22;
+    for (let row = -1; row < N / (s * 0.5) + 1; row++) for (let col = -1; col < N / s + 1; col++) {
+      const cx = col * s + (row % 2) * s / 2, cy = row * s * 0.5;
+      const g = x.createRadialGradient(cx, cy - 4, 2, cx, cy, s * 0.62);
+      g.addColorStop(0, '#d8d8d8'); g.addColorStop(0.8, '#707070'); g.addColorStop(1, '#202020');
+      x.fillStyle = g; x.beginPath(); x.arc(cx, cy, s * 0.6, 0, Math.PI); x.fill();
+    }
+  } else if (kind === 'cloth') {
+    for (let i = 0; i < N; i += 4) { x.fillStyle = i % 8 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.1)'; x.fillRect(i, 0, 2, N); x.fillRect(0, i, N, 2); }
+    for (let i = 0; i < 300; i++) { x.fillStyle = 'rgba(0,0,0,0.1)'; x.fillRect(R() * N, R() * N, 6 * R(), 1); }
+  } else if (kind === 'metal') {
+    for (let i = 0; i < 500; i++) { const v = 90 + R() * 80; x.strokeStyle = `rgba(${v},${v},${v},0.5)`; x.beginPath(); const y = R() * N; x.moveTo(0, y); x.lineTo(N, y + (R() - 0.5) * 4); x.stroke(); }
+    for (let i = 0; i < 40; i++) { x.strokeStyle = 'rgba(255,255,255,0.4)'; x.beginPath(); const px = R() * N, py = R() * N; x.moveTo(px, py); x.lineTo(px + (R() - 0.5) * 40, py + (R() - 0.5) * 10); x.stroke(); }
+  } else if (kind === 'bone') {
+    for (let i = 0; i < 1500; i++) { const v = R() > 0.6 ? 0 : 255; x.fillStyle = `rgba(${v},${v},${v},0.08)`; x.fillRect(R() * N, R() * N, 2, 2); }
+    x.strokeStyle = 'rgba(0,0,0,0.25)';
+    for (let i = 0; i < 12; i++) { x.beginPath(); let px = R() * N, py = R() * N; x.moveTo(px, py); for (let k = 0; k < 4; k++) { px += (R() - 0.5) * 24; py += R() * 16; x.lineTo(px, py); } x.stroke(); }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(2, 2);
+  return (TEXC[kind] = t);
+}
+
 function M(color, o = {}) {
-  return new THREE.MeshStandardMaterial({
+  const metal = (o.m ?? 0) > 0.5;
+  const glowing = o.e && o.e !== 0x000000 && (o.ei ?? 1) > 1;
+  const surf = o.tex === false || glowing || o.op ? null : o.tex || (metal ? 'metal' : 'skin');
+  const mat = new THREE.MeshPhysicalMaterial({
     color, roughness: o.r ?? 0.7, metalness: o.m ?? 0,
     emissive: o.e ?? 0x000000, emissiveIntensity: o.ei ?? 1,
     flatShading: !!o.flat, transparent: !!o.op, opacity: o.op ?? 1,
     side: o.ds ? THREE.DoubleSide : THREE.FrontSide,
+    clearcoat: o.cc ?? (glowing ? 1 : 0), clearcoatRoughness: 0.1,
+    sheen: o.tex === 'cloth' ? 0.6 : 0, sheenColor: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.4), sheenRoughness: 0.6,
   });
+  if (surf) {
+    const t = genTex(surf);
+    if (metal) { mat.roughnessMap = t; mat.bumpMap = t; mat.bumpScale = 0.3; }
+    else { mat.bumpMap = t; mat.bumpScale = surf === 'scales' ? 2.2 : surf === 'cloth' ? 0.8 : 1.2; }
+  }
+  return mat;
 }
 function add(parent, geo, mat, p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1]) {
   const m = new THREE.Mesh(geo, mat);
@@ -21,7 +75,7 @@ function add(parent, geo, mat, p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1]) {
   parent.add(m);
   return m;
 }
-const sph = (r, w = 20, h = 14) => new THREE.SphereGeometry(r, w, h);
+const sph = (r, w = 32, h = 22) => new THREE.SphereGeometry(r, Math.max(w, 24), Math.max(h, 16));
 const cap = (r, l) => new THREE.CapsuleGeometry(r, l, 6, 12);
 const cone = (r, h, s = 12) => new THREE.ConeGeometry(r, h, s);
 const box = (x, y, z) => new THREE.BoxGeometry(x, y, z);
@@ -31,12 +85,12 @@ const cyl = (a, b, h, s = 20) => new THREE.CylinderGeometry(a, b, h, s);
 function limb(parent, a, b, r0, r1, mat) {
   const dir = new THREE.Vector3().subVectors(b, a);
   const len = dir.length();
-  const m = new THREE.Mesh(cyl(r1, r0, len, 12), mat);
+  const m = new THREE.Mesh(cyl(r1, r0, len, 18), mat);
   m.position.copy(a).addScaledVector(dir, 0.5);
   m.quaternion.setFromUnitVectors(V3(0, 1, 0), dir.normalize());
   m.castShadow = true;
   parent.add(m);
-  const j = new THREE.Mesh(sph(r1, 10, 8), mat);
+  const j = new THREE.Mesh(sph(r1, 16, 12), mat);
   j.position.copy(b);
   j.castShadow = true;
   parent.add(j);
@@ -71,7 +125,14 @@ function finish(g, extra = {}) {
 // ---------------- monsters ----------------
 function goblin() {
   const g = new THREE.Group();
-  const skin = M(0x6f9a3e, { r: 0.6 }), cloth = M(0x5a3a22, { r: 0.9 }), hood = M(0x8a1c18, { r: 0.85 });
+  const skin = M(0x6f9a3e, { r: 0.6 }), cloth = M(0x5a3a22, { r: 0.9, tex: 'cloth' }), hood = M(0x8a1c18, { r: 0.85, tex: 'cloth' });
+  const leather = M(0x3a2414, { r: 0.6 }), brass = M(0xc89a40, { m: 0.9, r: 0.3 });
+  add(g, new THREE.TorusGeometry(0.175, 0.025, 8, 28), leather, [0, 0.27, 0], [Math.PI / 2, 0, 0]);
+  add(g, box(0.05, 0.04, 0.02), brass, [0, 0.27, 0.18]);
+  add(g, box(0.08, 0.09, 0.05), leather, [-0.14, 0.22, 0.09], [0, 0.4, 0]);
+  add(g, cyl(0.055, 0.06, 0.08, 16), leather, [-0.26, 0.37, 0.09], [0.6, 0, 0.6]);
+  add(g, cyl(0.055, 0.06, 0.08, 16), leather, [0.27, 0.4, 0.1], [0.6, 0, -0.6]);
+  add(g, new THREE.TorusGeometry(0.17, 0.012, 6, 24, Math.PI * 0.9), leather, [0, 0.4, 0.02], [0, 0, -0.9]);
   const eye = M(0xffd040, { e: 0xffb000, ei: 0.9 }), dark = M(0x1a0a06), tooth = M(0xf0e8c8, { r: 0.4 });
   add(g, cap(0.17, 0.22), cloth, [0, 0.36, 0]);
   add(g, cyl(0.2, 0.26, 0.16, 16), hood, [0, 0.24, 0]);
@@ -87,6 +148,7 @@ function goblin() {
   g.add(head);
   add(head, sph(0.19), skin, [0, 0, 0], [0, 0, 0], [1.05, 0.95, 1]);
   add(head, cone(0.055, 0.32), skin, [-0.25, 0.05, -0.02], [0, 0, Math.PI / 2 + 0.35]);
+  add(head, new THREE.TorusGeometry(0.025, 0.006, 6, 16), M(0xffd040, { m: 1, r: 0.2 }), [0.3, 0.0, 0.0], [0, Math.PI / 2, 0]);
   add(head, cone(0.055, 0.32), skin, [0.25, 0.05, -0.02], [0, 0, -Math.PI / 2 - 0.35]);
   add(head, cone(0.04, 0.16), skin, [0, -0.02, 0.22], [Math.PI / 2 - 0.25, 0, 0]);
   add(head, sph(0.045), eye, [-0.08, 0.05, 0.15]);
@@ -102,7 +164,10 @@ function goblin() {
 
 function skeleton() {
   const g = new THREE.Group();
-  const bone = M(0xe8dfc4, { r: 0.55 }), iron = M(0x6a6a72, { m: 0.75, r: 0.4 }), rag = M(0x8a1a14, { r: 0.9 });
+  const bone = M(0xe8dfc4, { r: 0.55, tex: 'bone' }), iron = M(0x6a6a72, { m: 0.75, r: 0.4 }), rag = M(0x8a1a14, { r: 0.9, tex: 'cloth' });
+  for (let i = 0; i < 7; i++) add(g, cyl(0.032, 0.032, 0.03, 14), bone, [0, 0.3 + i * 0.055, -0.03]);
+  limb(g, V3(-0.17, 0.68, 0.02), V3(0, 0.66, 0.05), 0.016, 0.016, bone);
+  limb(g, V3(0.17, 0.68, 0.02), V3(0, 0.66, 0.05), 0.016, 0.016, bone);
   const glow = M(0xff3020, { e: 0xff2010, ei: 2.5 }), black = M(0x050302);
   add(g, cyl(0.025, 0.025, 0.38), bone, [0, 0.45, -0.02]);
   for (let i = 0; i < 4; i++) {
@@ -119,6 +184,8 @@ function skeleton() {
   limb(g, V3(0.18, 0.66, 0), V3(0.3, 0.5, 0.12), 0.022, 0.02, bone);
   const shield = add(g, cyl(0.17, 0.17, 0.03, 24), M(0x5a3a1e, { r: 0.8 }), [-0.3, 0.45, 0.16], [Math.PI / 2, 0, 0.2]);
   add(g, cyl(0.05, 0.05, 0.04, 16), iron, [-0.3, 0.45, 0.18], [Math.PI / 2, 0, 0.2]);
+  add(g, new THREE.TorusGeometry(0.165, 0.014, 8, 32), iron, [-0.3, 0.45, 0.165], [0, 0, 0.2]);
+  add(g, cyl(0.11, 0.11, 0.032, 24), M(0x8a1a14, { r: 0.6, tex: false }), [-0.3, 0.45, 0.17], [Math.PI / 2, 0, 0.2]);
   const sword = add(g, box(0.03, 0.42, 0.012), M(0xc8ccd4, { m: 0.9, r: 0.3 }), [0.33, 0.7, 0.14], [0.2, 0, -0.5]);
   const head = new THREE.Group();
   head.position.set(0, 0.86, 0);
@@ -148,6 +215,13 @@ function cyclops() {
   limb(g, V3(0.3, 0.62, 0), V3(0.42, 0.32, 0.08), 0.09, 0.075, skin);
   add(g, sph(0.09), skin, [-0.43, 0.27, 0.1]);
   add(g, sph(0.09), skin, [0.43, 0.27, 0.1]);
+  const wood = M(0x5a3a1c, { r: 0.85 }), ironC = M(0x4a4440, { m: 0.85, r: 0.4 });
+  const club = new THREE.Group(); club.position.set(0.45, 0.27, 0.12); club.rotation.set(0.5, 0, -0.35); g.add(club);
+  add(club, cyl(0.09, 0.035, 0.6, 14), wood, [0, 0.3, 0]);
+  for (let i = 0; i < 8; i++) { const a = i * 0.8, yy = 0.42 + (i % 3) * 0.08; add(club, cone(0.018, 0.07, 6), ironC, [Math.cos(a) * 0.08, yy, Math.sin(a) * 0.08], [Math.sin(a) * 1.4, 0, -Math.cos(a) * 1.4]); }
+  add(g, new THREE.TorusGeometry(0.31, 0.03, 8, 30), M(0x3a2414, { r: 0.6 }), [0, 0.31, 0], [Math.PI / 2, 0, 0]);
+  add(g, sph(0.05), M(0xe8dcc0, { tex: 'bone' }), [0, 0.31, 0.3]);
+  for (const s of [-1, 1]) add(g, new THREE.TorusGeometry(0.085, 0.02, 8, 20), ironC, [s * 0.41, 0.4, 0.06], [Math.PI / 2 + 0.3, 0, s * 0.4]);
   const head = new THREE.Group();
   head.position.set(0, 0.88, 0.04);
   g.add(head);
@@ -187,7 +261,10 @@ function mimic() {
   add(g, sph(0.035), eyes, [-0.12, H - 0.02, -0.02]);
   add(g, sph(0.035), eyes, [0.12, H - 0.02, -0.02]);
   for (let i = 0; i < 6; i++) add(g, cyl(0.035, 0.035, 0.01, 12), gold, [-0.2 + Math.random() * 0.4, H - 0.01, -0.12 + Math.random() * 0.1], [Math.random() * 0.5, 0, Math.random() * 0.5]);
-  const tg = add(g, sph(0.1), tongue, [0, H + 0.02, D / 2 + 0.12], [0.4, 0, 0], [1.1, 0.35, 2.4]);
+  const tg = add(g, sph(0.07), tongue, [0, H + 0.01, D / 2 + 0.07], [0.5, 0, 0], [1.1, 0.35, 2.2]);
+  const drool = M(0xd8f0ff, { r: 0.05, op: 0.6, cc: 1 });
+  for (const dx of [-0.2, 0.05, 0.22]) add(g, cyl(0.006, 0.012, 0.12, 6), drool, [dx, H - 0.02, D / 2 + 0.01]);
+  for (let i = 0; i < 6; i++) add(g, cone(0.018, 0.06, 6), tooth, [-W / 2 + 0.12 + i * 0.09, H + 0.02, D / 2 - 0.08]);
   const lid = new THREE.Group();
   lid.position.set(0, H, -D / 2);
   g.add(lid);
@@ -213,12 +290,29 @@ function demon() {
   for (let i = 0; i < 3; i++) add(g, sph(0.07), skin, [0, 0.45 - i * 0.09, 0.2], [0, 0, 0], [1.5, 0.7, 0.6]);
   add(g, sph(0.16), skin, [-0.38, 0.7, 0], [0, 0, 0], [1, 0.9, 1]);
   add(g, sph(0.16), skin, [0.38, 0.7, 0], [0, 0, 0], [1, 0.9, 1]);
+  const wingM2 = M(0x2a1410, { r: 0.6, ds: true, tex: 'skin' });
+  for (const s of [-1, 1]) {
+    const sh = new THREE.Shape();
+    sh.moveTo(0, 0); sh.lineTo(0.75, 0.6); sh.lineTo(0.95, 0.15); sh.quadraticCurveTo(0.8, 0.05, 0.7, -0.1); sh.quadraticCurveTo(0.55, -0.05, 0.45, -0.2); sh.quadraticCurveTo(0.3, -0.1, 0.2, -0.25); sh.closePath();
+    const wing = new THREE.Mesh(new THREE.ShapeGeometry(sh, 8), wingM2);
+    wing.position.set(s * 0.22, 0.75, -0.2); wing.scale.set(s, 1, 1); wing.rotation.y = s * 0.6; wing.castShadow = true;
+    g.add(wing);
+    for (const [bx, by] of [[0.75, 0.6], [0.95, 0.15]]) limb(g, V3(s * 0.22, 0.75, -0.2), V3(s * (0.22 + bx * 0.8), 0.75 + by, -0.2 - bx * 0.45), 0.02, 0.008, hornM);
+  }
+  const tail = new THREE.CatmullRomCurve3([V3(0, 0.3, -0.25), V3(0.2, 0.15, -0.5), V3(0.45, 0.2, -0.55), V3(0.6, 0.35, -0.4)]);
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(tail, 24, 0.035, 8), skin));
+  add(g, cone(0.06, 0.12, 4), hornM, [0.63, 0.4, -0.37], [0, 0, -0.8]);
+  const rune = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.012, 6, 5), M(0xff6010, { e: 0xff4000, ei: 3 }));
+  rune.position.set(0, 0.6, 0.24); g.add(rune);
   const armL = new THREE.Group(); armL.position.set(-0.4, 0.7, 0); g.add(armL);
   const armR = new THREE.Group(); armR.position.set(0.4, 0.7, 0); g.add(armR);
   for (const [arm, s] of [[armL, -1], [armR, 1]]) {
     limb(arm, V3(0, 0, 0), V3(s * 0.15, -0.28, 0.12), 0.1, 0.085, skin);
     limb(arm, V3(s * 0.15, -0.28, 0.12), V3(s * 0.12, -0.42, 0.3), 0.085, 0.07, skin);
     for (let k = 0; k < 3; k++) add(arm, cone(0.018, 0.1, 6), hornM, [s * 0.1 + (k - 1) * 0.04, -0.44, 0.38], [Math.PI / 2, 0, 0]);
+    const chainM = M(0x5a5450, { m: 0.9, r: 0.35 });
+    add(arm, new THREE.TorusGeometry(0.09, 0.022, 8, 20), chainM, [s * 0.14, -0.3, 0.16], [Math.PI / 2 + 0.6, 0, 0]);
+    for (let k = 0; k < 4; k++) add(arm, new THREE.TorusGeometry(0.03, 0.009, 6, 12), chainM, [s * (0.16 + k * 0.035), -0.36 - k * 0.05, 0.18], [0, (k % 2) * Math.PI / 2, 0]);
   }
   const head = new THREE.Group();
   head.position.set(0, 0.98, 0.05);
@@ -263,7 +357,7 @@ function knightBase(o) {
 }
 function paladin() {
   const { g, head } = knightBase({ steel: 0xb8bcc4 });
-  const green = M(0x1f4a2c, { r: 0.9, ds: true });
+  const green = M(0x1f4a2c, { r: 0.9, ds: true, tex: 'cloth' });
   add(g, new THREE.TorusGeometry(0.13, 0.05, 8, 20), green, [0, 0.7, 0], [Math.PI / 2, 0, 0]);
   add(g, new THREE.PlaneGeometry(0.55, 0.7), green, [0, 0.35, -0.2], [0.15, 0, 0]);
   add(g, sph(0.05), M(0xd8b040, { m: 1, r: 0.3 }), [0, 0.55, 0.19]);
@@ -292,7 +386,7 @@ function crusader() {
 // ---------------- deck toy: the dragon ----------------
 function dragon() {
   const g = new THREE.Group();
-  const scale = M(0x8a1c12, { r: 0.45, m: 0.15, flat: true }), belly = M(0xd8a050, { r: 0.6 });
+  const scale = M(0x8a1c12, { r: 0.45, m: 0.15, tex: 'scales' }), belly = M(0xd8a050, { r: 0.6, tex: 'cloth' });
   const hornM = M(0x2a1c14, { r: 0.4 }), tooth = M(0xf0e8d0, { r: 0.3 });
   const eye = M(0xffe040, { e: 0xffb000, ei: 3 }), mouthGlow = M(0xff6010, { e: 0xff4000, ei: 2.5 });
   const wingM = M(0x5a120c, { r: 0.7, ds: true, op: 0.95 });
@@ -364,7 +458,7 @@ function rat() {
 
 function lich() {
   const g = new THREE.Group();
-  const robe = M(0x2a1a3a, { r: 0.85, flat: true }), trim = M(0x9a7a20, { m: 0.8, r: 0.3 });
+  const robe = M(0x2a1a3a, { r: 0.85, tex: 'cloth' }), trim = M(0x9a7a20, { m: 0.8, r: 0.3 });
   const bone = M(0xd8d0b8, { r: 0.5 }), glow = M(0x6aff8a, { e: 0x3aff6a, ei: 3 }), dark = M(0x050308);
   add(g, cone(0.36, 0.9, 10), robe, [0, 0.45, 0]);
   add(g, new THREE.TorusGeometry(0.33, 0.025, 6, 20), trim, [0, 0.06, 0], [Math.PI / 2, 0, 0]);
@@ -379,6 +473,10 @@ function lich() {
   add(head, sph(0.02), glow, [0.045, 0.0, 0.16]);
   add(head, box(0.1, 0.04, 0.06), bone, [0, -0.12, 0.08]);
   for (let i = 0; i < 5; i++) add(head, cone(0.02, 0.09, 5), trim, [-0.08 + i * 0.04, 0.16, 0.06], [0.2, 0, 0]);
+  add(head, new THREE.TorusGeometry(0.11, 0.015, 8, 24), trim, [0, 0.12, 0.03], [Math.PI / 2 + 0.25, 0, 0]);
+  const runes = new THREE.Group(); runes.position.y = 0.5; g.add(runes);
+  const runeM = M(0x6aff8a, { e: 0x3aff6a, ei: 2.5 });
+  for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const r2 = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 4, 3), runeM); r2.position.set(Math.cos(a) * 0.45, Math.sin(i) * 0.08, Math.sin(a) * 0.45); runes.add(r2); }
   // arms + staff with glowing orb
   limb(g, V3(0.22, 0.72, 0), V3(0.32, 0.5, 0.15), 0.05, 0.04, robe);
   limb(g, V3(-0.22, 0.72, 0), V3(-0.3, 0.55, 0.18), 0.05, 0.04, robe);
@@ -386,7 +484,7 @@ function lich() {
   add(staff, cyl(0.018, 0.018, 1.0, 8), M(0x3a2a1a), [0, 0.15, 0]);
   const orb = add(staff, sph(0.07), M(0x8affb0, { e: 0x40ff80, ei: 3, op: 0.9 }), [0, 0.7, 0]);
   for (let i = 0; i < 3; i++) add(staff, cone(0.015, 0.1, 5), bone, [Math.cos(i * 2.1) * 0.06, 0.62, Math.sin(i * 2.1) * 0.06], [0, 0, Math.cos(i * 2.1) * 0.5]);
-  return finish(g, { head, staff, orb, kind: 'lich', h: 1.2 });
+  return finish(g, { head, staff, orb, runes, kind: 'lich', h: 1.2 });
 }
 
 function anvil() {
@@ -426,10 +524,18 @@ export function renderPortraits(list, size = 256) {
   catch (e) { return {}; }
   r.outputColorSpace = THREE.SRGBColorSpace;
   r.toneMapping = THREE.ACESFilmicToneMapping;
+  // studio environment so metal armour has something to reflect
+  const envScene = new THREE.Scene();
+  const panel = (col, pos, size) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide })); m.position.set(...pos); m.lookAt(0, 0, 0); envScene.add(m); };
+  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(20, 16, 12), new THREE.MeshBasicMaterial({ color: 0x4a3a30, side: THREE.BackSide })));
+  panel(0xfff0d8, [0, 8, 4], 8); panel(0xff9040, [-8, 2, -2], 6); panel(0x6080ff, [8, 3, -3], 5); panel(0xffffff, [3, 2, 8], 5);
+  const pm = new THREE.PMREMGenerator(r);
+  const envTex = pm.fromScene(envScene, 0.02).texture;
   const out = {};
   for (const { id, bg, focus = 0.72, dist = 1.0 } of list) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(bg || 0x140c08);
+    scene.environment = envTex;
     scene.add(new THREE.HemisphereLight(0xb0a090, 0x201008, 1.4));
     const key = new THREE.DirectionalLight(0xffe0b8, 2.6);
     key.position.set(1.2, 2, 2.5);
