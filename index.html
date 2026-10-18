@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0806" />
+  <meta name="description" content="Dungeon Delver — a dungeon-crawler RPG pinball game. Slay monsters, loot relics, and trigger Treasure Hoard Multiball." />
+  <meta property="og:title" content="Dungeon Delver Pinball" />
+  <meta property="og:description" content="A dungeon-crawler RPG pinball game playable in your browser." />
+  <title>Dungeon Delver Pinball</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Cinzel+Decorative:wght@700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">{ "imports": { "three": "./js/vendor/three.module.min.js" } }</script>
+</head>
+<body>
+  <div id="app" class="wide">
+    <!-- LEFT: hero -->
+    <aside id="left" class="panel">
+      <div class="card hero-card">
+        <div class="portrait-frame"><img id="heroImg" alt="" /></div>
+        <div class="name" id="heroName">CHOOSE A HERO</div>
+        <div class="subtitle" id="heroTitle">&nbsp;</div>
+        <div class="row"><span>Level</span><b id="lvl">1</b></div>
+        <div class="bar xp" title="Experience"><i id="xpBar"></i></div>
+        <button class="power-btn" id="powerBtn" title="Activate hero power (E)">
+          <span class="pname" id="powerName">HERO POWER</span>
+          <span class="bar charge"><i id="chargeBar"></i></span>
+          <small id="powerHint">Charge by hitting targets · press E</small>
+        </button>
+        <div class="row gold"><span>Gold</span><b id="gold">0</b></div>
+        <div class="relics-title">Relics</div>
+        <div class="relics" id="relics"><span class="none">None yet — slay a monster, then shoot the Vault.</span></div>
+      </div>
+      <div class="card keys">
+        <div><kbd>Z</kbd>/<kbd>⇧</kbd>/<kbd>←</kbd> Left flipper</div>
+        <div><kbd>/</kbd>/<kbd>⇧</kbd>/<kbd>→</kbd> Right flipper</div>
+        <div><kbd>Space</kbd> hold &amp; release to plunge</div>
+        <div><kbd>E</kbd> hero power · <kbd>X</kbd><kbd>C</kbd><kbd>V</kbd> nudge</div>
+        <div><kbd>Esc</kbd> pause · <kbd>M</kbd> mute · <kbd>F</kbd> fullscreen · <kbd>V</kbd> camera</div>
+      </div>
+    </aside>
+
+    <!-- CENTER: backbox DMD + table -->
+    <main id="center">
+      <div id="dmdTop" class="dmd-slot"></div>
+      <div id="mobileHud">
+        <button id="mPower" class="m-power" aria-label="Hero power"><img id="mHeroImg" alt="" /><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" class="trk"/><circle cx="20" cy="20" r="17" class="val" id="mCharge"/></svg></button>
+        <div class="m-stats">
+          <div class="m-mon"><span id="mMonName">—</span><span class="bar hp"><i id="mHp"></i></span></div>
+          <div class="m-gold">💰 <b id="mGold">0</b> · LV <b id="mLvl">1</b> · <span class="m-quest" id="mQuest"></span></div>
+        </div>
+        <button class="icon-btn" id="mPause" aria-label="Pause">⏸</button>
+      </div>
+      <div id="tableWrap">
+        <canvas id="table"></canvas>
+        <canvas id="overlay"></canvas>
+        <div id="fps"></div>
+      </div>
+    </main>
+
+    <!-- RIGHT: quest -->
+    <aside id="right" class="panel">
+      <div id="dmdSide" class="dmd-slot"><div id="dmdBox"><canvas id="dmd"></canvas></div></div>
+      <div class="card monster-card">
+        <div class="mon-head">
+          <div class="mon-frame"><img id="monImg" alt="" /></div>
+          <div>
+            <div class="name" id="monName">SNIK THE CUTPURSE</div>
+            <div class="subtitle" id="monTitle">Goblin Raider</div>
+            <div class="bar hp"><i id="hpBar"></i></div>
+            <div class="hp-text" id="hpText">&nbsp;</div>
+          </div>
+        </div>
+        <p class="mon-desc" id="monDesc">Five foes guard each floor of the dungeon. Slay them all to descend.</p>
+      </div>
+      <div class="card quest-card">
+        <div class="relics-title">Current Quest</div>
+        <div class="qname" id="qName">—</div>
+        <div class="qdesc" id="qDesc">Quests appear once your adventure begins.</div>
+        <span class="bar quest"><i id="qBar"></i></span>
+        <div class="qreward" id="qReward">&nbsp;</div>
+        <div class="status-chips" id="chips"></div>
+      </div>
+      <div class="card quest">
+        <div class="row"><span>Floor</span><b id="floor">1</b></div>
+        <div class="foes" id="foes"></div>
+        <div class="row"><span>Treasure locks</span><b class="gems" id="locks">◇◇◇</b></div>
+        <div class="row"><span>Bonus</span><b id="bonusX">1X</b></div>
+        <div class="row"><span>Ball</span><b id="ballNo">—</b></div>
+      </div>
+      <div class="btn-row">
+        <button class="icon-btn" id="btnSettings" title="Settings">⚙</button>
+        <button class="icon-btn" id="btnPause" title="Pause (Esc)">⏸</button>
+        <button class="icon-btn" id="btnMute" title="Mute (M)">🔊</button>
+        <button class="icon-btn" id="btnFull" title="Fullscreen (F)">⛶</button>
+        <button class="icon-btn" id="btnHelp" title="How to play">?</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ============ OVERLAYS ============ -->
+  <div id="ovTitle" class="overlay show title-screen">
+    <div class="title-inner">
+      <div class="crest">⚔</div>
+      <h1>Dungeon<br />Delver</h1>
+      <div class="tagline">A Pinball Quest into the Depths of the Ember King</div>
+      <div class="click">Click to Continue</div>
+      <div class="credits">
+        <div>Made by Jon Beam with the use of Claude Code.</div>
+        <div class="updated">Last updated: <span id="lastUpdated"></span></div>
+      </div>
+    </div>
+    <div class="embers" id="embers"></div>
+  </div>
+
+  <div id="ovMenu" class="overlay">
+    <div class="menu-box">
+      <h2>Dungeon Delver</h2>
+      <button class="btn big" id="mStart">Begin Your Quest</button>
+      <button class="btn" id="mHelp">How to Play</button>
+      <button class="btn" id="mScores">Hall of Heroes</button>
+      <button class="btn" id="mAch">Achievements</button>
+      <button class="btn" id="mSettings">Settings</button>
+      <div class="menu-foot">Made by Jon Beam with the use of Claude Code · Updated <span class="upd"></span></div>
+    </div>
+  </div>
+
+  <div id="ovHero" class="overlay">
+    <div class="hero-select">
+      <h2>Choose Your Hero</h2>
+      <div class="hero-cards">
+        <button class="hero-opt" data-hero="paladin">
+          <img class="hero-pic" data-portrait="paladin" alt="Paladin" />
+          <div class="ho-body">
+            <div class="name">Sir Aldric</div>
+            <div class="subtitle">Paladin of the Verdant Oath</div>
+            <div class="power"><b>Power · Divine Aegis</b><span></span></div>
+            <div class="passive"></div>
+          </div>
+        </button>
+        <button class="hero-opt" data-hero="crusader">
+          <img class="hero-pic" data-portrait="crusader" alt="Crusader" />
+          <div class="ho-body">
+            <div class="name">Brother Caedmon</div>
+            <div class="subtitle">Crusader of the Red Blade</div>
+            <div class="power"><b>Power · Blood Oath</b><span></span></div>
+            <div class="passive"></div>
+          </div>
+        </button>
+      </div>
+      <div class="hint">← → to choose · Space / Enter / click to begin · Esc to go back</div>
+    </div>
+  </div>
+
+  <div id="ovRelic" class="overlay dim">
+    <div class="relic-box">
+      <h2>Loot Drop!</h2>
+      <p class="sub">Choose one relic to carry deeper into the dungeon.</p>
+      <div class="relic-cards" id="relicCards"></div>
+      <div class="hint">Flippers to choose · Plunger / click to take it</div>
+    </div>
+  </div>
+
+  <div id="ovPause" class="overlay dim">
+    <div class="menu-box">
+      <h2>Paused</h2>
+      <button class="btn big" id="pResume">Resume</button>
+      <button class="btn" id="pSettings">Settings</button>
+      <button class="btn" id="pHelp">How to Play</button>
+      <button class="btn" id="pRestart">Restart Game</button>
+      <button class="btn" id="pQuit">Quit to Menu</button>
+    </div>
+  </div>
+
+  <div id="ovSettings" class="overlay dim">
+    <div class="menu-box settings">
+      <h2>Settings</h2>
+      <label class="slider"><span>Master Volume</span><input type="range" min="0" max="100" id="sMaster" /><output id="oMaster"></output></label>
+      <label class="slider"><span>Music</span><input type="range" min="0" max="100" id="sMusic" /><output id="oMusic"></output></label>
+      <label class="slider"><span>Sound Effects</span><input type="range" min="0" max="100" id="sSfx" /><output id="oSfx"></output></label>
+      <div class="toggles">
+        <label class="tog"><input type="checkbox" id="sShake" /><span>Screen shake</span></label>
+        <label class="tog"><input type="checkbox" id="sFlashes" /><span>Bright flashes</span></label>
+        <label class="tog"><input type="checkbox" id="sTrail" /><span>Ball trails</span></label>
+        <label class="tog"><input type="checkbox" id="sHaptics" /><span>Vibration (mobile)</span></label>
+        <label class="tog"><input type="checkbox" id="sFps" /><span>Show FPS</span></label>
+        <label class="tog"><input type="checkbox" id="sBloom" /><span>Glow (bloom)</span></label>
+      </div>
+      <label class="select"><span>Camera</span>
+        <select id="sCamera"><option value="player">Player view (follows ball)</option><option value="fixed">Player view (fixed)</option><option value="overhead">Overhead</option></select>
+      </label>
+      <label class="select"><span>Graphics quality</span>
+        <select id="sQuality"><option value="auto">Auto</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low (fast)</option></select>
+      </label>
+      <label class="select"><span>Balls per game</span>
+        <select id="sBalls"><option value="3">3 balls</option><option value="5">5 balls</option></select>
+      </label>
+      <div class="btn-line">
+        <button class="btn small" id="sResetScores">Reset high scores</button>
+        <button class="btn small" id="sDefaults">Restore defaults</button>
+      </div>
+      <button class="btn big" id="sClose">Done</button>
+    </div>
+  </div>
+
+  <div id="ovHelp" class="overlay dim">
+    <div class="menu-box help">
+      <h2>How to Play</h2>
+      <div class="help-cols">
+        <section>
+          <h3>Controls</h3>
+          <p><b>Flippers:</b> Z / Left Shift / ← and / / Right Shift / →. The left button works <b>every left flipper</b> on every table, the right button every right flipper (8 in total!). On touch screens, tap the left or right half of the screen.</p>
+          <p><b>Plunger:</b> hold Space (or hold the right side on touch), release to fire. A soft plunge into the <b>flashing top lane</b> is a <b>Skill Shot</b>.</p>
+          <p><b>Hero Power:</b> E or tap your hero. <b>Nudge:</b> X / C / V (careful: <b>TILT</b>). <b>Camera:</b> V cycles Player / Fixed overview / Overhead.</p>
+        </section>
+        <section>
+          <h3>The Quest</h3>
+          <p>A monster stands in the <b>Lair</b>. Slay all five (Goblin, Skeleton, Cyclops, Mimic and the boss <b>Azgaroth</b>) to clear a floor. Deeper floors bring <b>curses</b>.</p>
+          <p>Each kill lights a <b>Relic</b> at the Vault. <b>Quests</b> (right panel) give rewards. Watch for <b>Rat Swarms</b> to squash, <b>Rescue</b> hurry-ups at the Vault, and <b>Torch Frenzy</b>.</p>
+          <p>Drop all four <b>R-U-N-E</b> targets to light <b>Lock</b>. Lock 3 balls at the Vault for <b>Treasure Hoard Multiball</b>.</p>
+        </section>
+        <section>
+          <h3>The Other Tables</h3>
+          <p><b>Dragon's Den</b> (upper deck): every 2nd <b>Shrine Ramp</b> opens the lift. Wake the dragon, hatch its eggs, raid the hoard pit.</p>
+          <p><b>The Crypt</b> (left table): complete <b>H-E-R-O</b>, then shoot the <b>left orbit</b>. Smash coffins and destroy the <b>Lich</b> for an extra ball.</p>
+          <p><b>The Forge</b> (right table): complete <b>S-L-A-Y</b>, then shoot the <b>right orbit</b>. Every 4 anvil strikes forges a weapon: <b>+1 damage</b> for the rest of your game.</p>
+        </section>
+      </div>
+      <button class="btn big" id="hClose">Got it</button>
+    </div>
+  </div>
+
+  <div id="ovAch" class="overlay dim">
+    <div class="menu-box wide">
+      <h2>Achievements</h2>
+      <div class="ach-count" id="achCount"></div>
+      <div class="ach-grid" id="achGrid"></div>
+      <button class="btn big" id="achClose">Back</button>
+    </div>
+  </div>
+
+  <div id="ovScores" class="overlay dim">
+    <div class="menu-box">
+      <h2>Hall of Heroes</h2>
+      <ol class="scores" id="scoreList"></ol>
+      <button class="btn big" id="scClose">Back</button>
+    </div>
+  </div>
+
+  <div id="ovOver" class="overlay dim">
+    <div class="menu-box over">
+      <h2>Your Quest Ends</h2>
+      <div class="final" id="finalScore">0</div>
+      <div class="final-stats" id="finalStats"></div>
+      <div id="entry" class="entry">
+        <p>A new legend! Carve your initials:</p>
+        <input id="initials" maxlength="3" autocomplete="off" spellcheck="false" />
+        <button class="btn" id="saveScore">Inscribe</button>
+      </div>
+      <ol class="scores" id="overScores"></ol>
+      <button class="btn big" id="oAgain">Delve Again</button>
+      <button class="btn" id="oMenu">Main Menu</button>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+  <div id="rotateHint">Rotate your device to portrait for the best experience</div>
+
+  <script src="js/util.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/table.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/dmd.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/features.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+  <script type="module" src="js/render3d.js"></script>
+</body>
+</html>
